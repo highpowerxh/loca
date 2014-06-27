@@ -5,7 +5,7 @@ $: << LocaCmdDir
 
 require 'src/env'
 require 'src/machine'
-#require 'src/Anytaskset/anytaskset-mc'
+require 'fileutils'
 require 'net/http'
 require 'rest_client'
 require 'launchy'
@@ -33,7 +33,7 @@ def cmd_help
   puts "pmr\tget miss ratio of a pfp"
   puts "upload\tupload current data to server"
   puts "  -r [server address]\tupload to remote servers"
-  puts "clean\t[todo]clean current data dir"
+  puts "clean [name]\tclean current data dir, move all existing data files into folder 'name'(default name is current time)"
   puts "help"
 end
 
@@ -171,7 +171,6 @@ begin
       data_dir = Labenv.paths[Labenv::DataDir]
       url = (args[0] != '-r')?'http://localhost:3000/upload':'http://loca.highpower.me:3000/upload'
       Dir.foreach(data_dir) { |file|
-        isDir = File.directory?(file)
         next if File.directory?(file)
         if file =~ /.dat([.][a|i|d])?$/ or file =~ /.info$/ or file =~ /.fp$/#check file type
           basename = File.join(data_dir, file)
@@ -186,8 +185,14 @@ begin
         end
       }
     elsif cmd == "clean"
-      #todo
-      puts "[todo] comming soon, please manually empty the data dir"
+      dirname = args[0] || Time.now.strftime("%Y%m%d%H%M%S")
+      data_dir = Labenv.paths[Labenv::DataDir]
+      Dir.mkdir("#{data_dir}/#{dirname}") if not File.directory?"#{data_dir}/#{dirname}"
+      Dir.foreach(data_dir) { |file|
+        next if File.directory?(file)
+        FileUtils.mv "#{data_dir}/#{file}", "#{data_dir}/#{dirname}" if file =~ /.dat([.][a|i|d])?$/ or file =~ /.info$/ or file =~ /.fp$/ or file =~ /.out([.]pt)?$/ or file =~ /.sg.out.[0-9]([0-9])?$/
+      }
+      puts "previous data files have been moved into folder: #{dirname} in data directory"
     else
       puts "#{cmd} not a valid command (see '#{$0.split('/')[-1]} help')"
     end
