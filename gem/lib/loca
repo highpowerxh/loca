@@ -28,6 +28,7 @@ def cmd_help
   puts "  -i\trun instruction analysis"
   puts "  -a\trun both data and instruction analysis"
   puts "mr\trun both data and instruction analysis"
+  puts "compare <test_2> [test_1]\tcompare test2 with test1 which default to the last run"
   puts "prun\trun loca analysis on one parallel program "
   puts "pfp\tget footprint of a prun"
   puts "pmr\tget miss ratio of a pfp"
@@ -35,6 +36,74 @@ def cmd_help
   puts "  -r [server address]\tupload to remote servers"
   puts "clean [name]\tclean current data dir, move all existing data files into folder 'name'(default name is current time)"
   puts "help"
+end
+
+def calcmr(filename,cachesize)
+  #calc the miss ratio from data
+  File.open(filename, "r") do |f|
+    firstline=f.gets #skip the first line
+    accesscount = firstline.split[0][2..-1].to_i
+    dis64 = firstline.split[1][3..-1].to_i
+    dis4 = firstline.split[2][3..-1].to_i
+    while line = f.gets
+      if line.split[1].to_f <= cachesize
+        lastline = line
+      else
+        break
+      end
+    end
+    unless lastline == nil
+      x1=lastline.split[1].to_f
+      x2=line.split[1].to_f
+      y1=lastline.split[4].to_f
+      y2=line.split[4].to_f
+      mr1=y1+(cachesize-x1)*(y2-y1)/(x2-x1)
+      y1=lastline.split[7].to_f
+      y2=line.split[7].to_f
+      mr2=y1+(cachesize-x1)*(y2-y1)/(x2-x1)
+      return accesscount,dis64,mr1,dis4,mr2
+    else
+      raise "wrong cache size"
+    end
+  end
+end
+
+def calclf(filename,cachesize)
+  #calc the lifetime from data
+  File.open(filename, "r") do |f|
+    firstline=f.gets #skip the first line
+    while line = f.gets
+      if line.split[2].to_f <= cachesize
+        lastline64 = line
+      else
+        line64 = line
+        break
+      end
+    end
+    while line = f.gets
+      if line.split[5].to_f <= cachesize
+        lastline4 = line
+      else
+        line4 = line
+        break
+      end
+    end
+    if not lastline64 == nil and not lastline4 == nil
+      x1=lastline64.split[1].to_f
+      x2=line64.split[1].to_f
+      y1=lastline64.split[2].to_f
+      y2=line64.split[2].to_f
+      lf64=x1+(cachesize-y1)*(x2-x1)/(y2-y1)
+      x1=lastline4.split[1].to_f
+      x2=line4.split[1].to_f
+      y1=lastline4.split[5].to_f
+      y2=line4.split[5].to_f
+      lf4=x1+(cachesize-y1)*(x2-x1)/(y2-y1)
+      return lf64,lf4
+    else
+      raise "wrong cache size"
+    end
+  end
 end
 
 if ARGV.size >= 1
@@ -62,7 +131,7 @@ begin
     if cmd == "run"
       data_dir = Labenv.paths[Labenv::DataDir]
       basename = Machine.get_output_file_name(args[0])
-      last = File.open("#{data_dir}/name.last","w")
+      last = File.open("#{data_dir}/name.last", "w")
       last.write basename
       basename = File.join(data_dir, basename)
       if runpara == "-d"
@@ -85,14 +154,24 @@ begin
       end
     elsif cmd == "mr"
       data_dir = Labenv.paths[Labenv::DataDir]
-      last = File.open("#{data_dir}/name.last","r")
+      last = File.open("#{data_dir}/name.last", "r")
       basename = args[0] || basename=last.readline
       puts 'please input the test metric a/d/i for All/Data/Instructions'
       metric = $stdin.gets.chomp
-      basename = File.join(data_dir,"#{basename}.dat.#{metric}")
+      basename = File.join(data_dir, "#{basename}.dat.#{metric}")
       puts 'please input the cache size (byte)'
       cachesize = $stdin.gets.chomp.to_f
       #calc the miss ratio from data
+      accesscount,dis64,mr1,dis4,mr2,=calcmr(basename,cachesize)
+      puts "Access count:\t#{accesscount}"
+      puts "For 64 byte cache block"
+      puts "\tMax footprint:\t#{dis64}"
+      puts "\tMiss ratio:\t#{mr1}"
+      puts "For 4 byte cache block"
+      puts "\tMax footprint:\t#{dis4}"
+      puts "\tMiss ratio:\t#{mr2}"
+
+=begin
       File.open(basename, "r") do |f|
         firstline=f.gets #skip the first line
         accesscount = firstline.split[0][2..-1].to_i
@@ -100,7 +179,7 @@ begin
         dis4 = firstline.split[2][3..-1].to_i
         while line = f.gets
           if line.split[1].to_f <= cachesize
-          lastline = line
+            lastline = line
           else
             break
           end
@@ -124,12 +203,13 @@ begin
         else
           raise "wrong cache size"
         end
-      end
+    end
+=end
 
     elsif cmd == "prun"
       data_dir = Labenv.paths[Labenv::DataDir]
       basename = Machine.get_output_file_name(args[0])
-      last = File.open("#{data_dir}/name.last.p","w")
+      last = File.open("#{data_dir}/name.last.p", "w")
       last.write basename
       basename = File.join(data_dir, basename)
       syscmd = "#{Labenv.env[cmd]} -o #{basename}.fp.out -l 12 -g #{basename}.sg.out -- #{args * ' '}"
@@ -145,7 +225,7 @@ begin
 
     elsif cmd == "pfp"
       data_dir = Labenv.paths[Labenv::DataDir]
-      last = File.open("#{data_dir}/name.last.p","r")
+      last = File.open("#{data_dir}/name.last.p", "r")
       basename = args[0] || basename=last.readline
       basename = File.join(data_dir, basename)
       puts 'please input the max number of threads'
@@ -158,7 +238,7 @@ begin
       run_cmd syscmd
     elsif cmd == "pmr"
       data_dir = Labenv.paths[Labenv::DataDir]
-      last = File.open("#{data_dir}/name.last.p","r")
+      last = File.open("#{data_dir}/name.last.p", "r")
       basename = args[0] || basename=last.readline
       basename = File.join(data_dir, basename)
       puts 'please input the cache size (byte)'
@@ -169,10 +249,10 @@ begin
       run_cmd syscmd
     elsif cmd == "upload"
       data_dir = Labenv.paths[Labenv::DataDir]
-      url = (args[0] != '-r')?'http://localhost:3000/upload':'http://loca.highpower.me:3000/upload'
+      url = (args[0] != '-r') ? 'http://localhost:3000/upload' : 'http://loca.highpower.me:3000/upload'
       Dir.foreach(data_dir) { |file|
         next if File.directory?(file)
-        if file =~ /.dat([.][a|i|d])?$/ or file =~ /.info$/ or file =~ /.fp$/#check file type
+        if file =~ /.dat([.][a|i|d])?$/ or file =~ /.info$/ or file =~ /.fp$/ #check file type
           basename = File.join(data_dir, file)
           f = File.new(basename, "rb")
           reply = RestClient.post(url,
@@ -184,15 +264,48 @@ begin
           end
         end
       }
+
     elsif cmd == "clean"
       dirname = args[0] || Time.now.strftime("%Y%m%d%H%M%S")
       data_dir = Labenv.paths[Labenv::DataDir]
-      Dir.mkdir("#{data_dir}/#{dirname}") if not File.directory?"#{data_dir}/#{dirname}"
+      Dir.mkdir("#{data_dir}/#{dirname}") if not File.directory? "#{data_dir}/#{dirname}"
       Dir.foreach(data_dir) { |file|
         next if File.directory?(file)
         FileUtils.mv "#{data_dir}/#{file}", "#{data_dir}/#{dirname}" if file =~ /.dat([.][a|i|d])?$/ or file =~ /.info$/ or file =~ /.fp$/ or file =~ /.out([.]pt)?$/ or file =~ /.sg.out.[0-9]([0-9])?$/
       }
       puts "previous data files have been moved into folder: #{dirname} in data directory"
+
+    elsif cmd == "compare"
+      data_dir = Labenv.paths[Labenv::DataDir]
+      last = File.open("#{data_dir}/name.last", "r")
+      name2 = args[0]
+      name1 = args[1] || basename=last.readline
+      puts 'please input the test metric a/d/i for All/Data/Instructions'
+      metric = $stdin.gets.chomp
+      test2 = File.join(data_dir, "#{name2}.dat.#{metric}")
+      test1 = File.join(data_dir, "#{name1}.dat.#{metric}")
+      puts 'please input the cache size (byte)'
+      cachesize = $stdin.gets.chomp.to_f
+      accesscount1,dis641,mr11,dis41,mr21,=calcmr(test1,cachesize)
+      accesscount2,dis642,mr12,dis42,mr22,=calcmr(test2,cachesize)
+      lf641,lf41=calclf(test1,cachesize)
+      lf641 = format("%0.5f",lf641)
+      lf41 = format("%0.5f",lf41)
+      lf642,lf42=calclf(test2,cachesize)
+      lf642 = format("%0.5f",lf642)
+      lf42 = format("%0.5f",lf42)
+      name1 = "#{name1[0]}..#{name1[-5..-1]}" if name1.length > 7
+      name2 = "#{name2[0]}..#{name2[-5..-1]}" if name2.length > 7
+      puts "Test Case\t\t#{name1}\t\t#{name2}"
+      puts "Access count\t#{accesscount1}\t#{accesscount2}"
+      puts "64 byte"
+      puts "Max footprint\t#{dis641}\t\t#{dis642}"
+      puts "Miss ratio\t\t#{mr11}\t\t#{mr12}"
+      puts "Life Time\t\t#{lf641}\t\t#{lf642}"
+      puts "4 byte"
+      puts "Max footprint\t#{dis41}\t\t#{dis42}"
+      puts "Miss ratio\t\t#{mr21}\t\t#{mr22}"
+      puts "Life Time\t\t#{lf41}\t\t#{lf42}"
     else
       puts "#{cmd} not a valid command (see '#{$0.split('/')[-1]} help')"
     end
@@ -215,4 +328,4 @@ rescue Exception => e
     end # if
   end # while
 end
-  
+
